@@ -1,3 +1,6 @@
+# This callable workflow is called from separate workflows for each Ubuntu
+# runner version. We use separate workflows for runner version rather than a
+# matrix to allow creating status badges for each runner version.
 name: Tests
 
 on:
@@ -32,6 +35,7 @@ jobs:
           - 13
           - 14
           - 15
+          - 16
     steps:
     - uses: actions/checkout@v3
     - name: Build and test the Docker image

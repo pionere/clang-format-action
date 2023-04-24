@@ -5,26 +5,26 @@
 ###############################################################################
 # USAGE: ./entrypoint.sh [<path>] [<fallback style>]
 #
-# Checks all C/C++/Protobuf files (.h, .H, .hpp, .hh, .h++, .hxx and .c, .C,
-# .cpp, .cc, .c++, .cxx, .proto) in the provided GitHub repository path
+# Checks all C/C++/Protobuf/CUDA files (.h, .H, .hpp, .hh, .h++, .hxx and .c,
+# .C, .cpp, .cc, .c++, .cxx, .proto, .cu) in the provided GitHub repository path
 # (arg1) for conforming to clang-format. If no path is provided or provided path
-# is not a directory, all C/C++/Protobuf files are checked. If any files are
-# incorrectly formatted, the script lists them and exits with 1.
+# is not a directory, all C/C++/Protobuf/CUDA files are checked. If any files
+# are incorrectly formatted, the script lists them and exits with 1.
 #
 # Define your own formatting rules in a .clang-format file at your repository
 # root. Otherwise, the provided style guide (arg2) is used as a fallback.
 
 # format_diff function
 # Accepts a filepath argument. The filepath passed to this function must point
-# to a C/C++/Protobuf file.
+# to a C/C++/Protobuf/CUDA file.
 format_diff() {
 	local filepath="$1"
 	# Invoke clang-format with dry run and formatting error output
-	formatted="$(docker run -i -v "$(pwd)":"$(pwd)" -w "$(pwd)" --rm ghcr.io/jidicula/clang-format:"$CLANG_FORMAT_VERSION" --style=file --fallback-style="$FALLBACK_STYLE" "${filepath}")"
+	formatted="$(docker run -i -v "$(pwd)":"$(pwd)" -w "$(pwd)" --rm ghcr.io/jidicula/clang-format:"$CLANG_FORMAT_MAJOR_VERSION" --style=file --fallback-style="$FALLBACK_STYLE" "${filepath}")"
 	report_format="$(diff <(cat "${filepath}") <(echo "${formatted}"))"
 
-	if [[ $CLANG_FORMAT_VERSION -gt "9" ]]; then
-		local_format="$(docker run -i -v "$(pwd)":"$(pwd)" -w "$(pwd)" --rm ghcr.io/jidicula/clang-format:"$CLANG_FORMAT_VERSION" -n --Werror --style=file --fallback-style="$FALLBACK_STYLE" "${filepath}")"
+	if [[ $CLANG_FORMAT_MAJOR_VERSION -gt "9" ]]; then
+		local_format="$(docker run -i -v "$(pwd)":"$(pwd)" -w "$(pwd)" --rm ghcr.io/jidicula/clang-format:"$CLANG_FORMAT_MAJOR_VERSION" -n --Werror --style=file --fallback-style="$FALLBACK_STYLE" "${filepath}")"
 	else # Versions below 9 don't have dry run
 		local_format="$(diff -q <(cat "${filepath}") <(echo "${formatted}"))"
 	fi
@@ -53,14 +53,26 @@ format_diff() {
 	return 0
 }
 
-CLANG_FORMAT_VERSION="$1"
+CLANG_FORMAT_MAJOR_VERSION="$1"
 CHECK_PATH="$2"
 FALLBACK_STYLE="$3"
 EXCLUDE_REGEX="$4"
+INCLUDE_REGEX="$5"
 
 # Set the regex to an empty string regex if nothing was provided
-if [ -z "$EXCLUDE_REGEX" ]; then
+if [[ -z $EXCLUDE_REGEX ]]; then
 	EXCLUDE_REGEX="^$"
+fi
+
+# Set the filetype regex if nothing was provided.
+# Find all C/C++/Protobuf/CUDA files:
+#   h, H, hpp, hh, h++, hxx
+#   c, C, cpp, cc, c++, cxx
+#   ino, pde
+#   proto
+#   cu
+if [[ -z $INCLUDE_REGEX ]]; then
+	INCLUDE_REGEX='^.*\.((((c|C)(c|pp|xx|\+\+)?$)|((h|H)h?(pp|xx|\+\+)?$))|(ino|pde|proto|cu))$'
 fi
 
 cd "$GITHUB_WORKSPACE" || exit 2
@@ -74,14 +86,10 @@ fi
 exit_code=0
 
 # All files improperly formatted will be printed to the output.
-# find all C/C++/Protobuf files:
-#   h, H, hpp, hh, h++, hxx
-#   c, C, cpp, cc, c++, cxx
-#   ino, pde
-#   proto
-src_files=$(find "$CHECK_PATH" -name .git -prune -o -regextype posix-egrep -regex '^.*\.((((c|C)(c|pp|xx|\+\+)?$)|((h|H)h?(pp|xx|\+\+)?$))|(ino|pde)|(proto))$' -print)
+src_files=$(find "$CHECK_PATH" -name .git -prune -o -regextype posix-egrep -regex "$INCLUDE_REGEX" -print)
 
 # check formatting in each source file
+IFS=$'\n' # Loop below should separate on new lines, not spaces.
 for file in $src_files; do
 	# Only check formatting if the path doesn't match the regex
 	if ! [[ ${file} =~ $EXCLUDE_REGEX ]]; then
